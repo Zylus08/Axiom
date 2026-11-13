@@ -42,3 +42,4 @@ For Milestone M2:
 - Introduce memory budget accounting per operator.
 - Implement external sorting (multi-way merge sort with spill partitions on disk).
 - Implement partitioned grace hash join with partition spilling for datasets exceeding available RAM.
+

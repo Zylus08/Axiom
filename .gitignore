@@ -9,3 +9,4 @@ benchmarks/data/
 *.ilk
 .ninja_*
 ninja.log
+

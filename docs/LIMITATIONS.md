@@ -31,3 +31,4 @@ The Axiom architecture was structured to cleanly accommodate M2 requirements:
    - Partition build and probe tuples into hash-bucketed spill files on disk when memory thresholds are exceeded.
 4. **Partitioned Hash Aggregation:**
    - Spill aggregation buckets when grouping large high-cardinality datasets.
+

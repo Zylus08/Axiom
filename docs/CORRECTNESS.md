@@ -64,3 +64,4 @@ Correctness for Project Axiom is established across three testing tiers:
 | **Integration Tests** | `tests/integration/test_end_to_end.cpp` | 19 checks | **PASSED** (100%) |
 | **Differential Tests**| `tests/differential/test_differential.py` | 120 queries | **PASSED** (100%) |
 | **TOTAL** | — | **343 checks / queries** | **ALL PASSED** |
+

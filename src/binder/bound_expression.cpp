@@ -67,3 +67,4 @@ bool BoundAggregateExpr::is_equal(const BoundExpr& other) const {
 }
 
 } // namespace axiom
+
