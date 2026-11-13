@@ -1,34 +1,36 @@
-# Project Axiom Limitations & M2 Roadmap (Milestone M1)
+# Project Axiom Limitations & Roadmap (Milestone M2)
 
-## 1. Milestone M1 Limitations
+## 1. Milestone M2 Status & Resolved Capabilities
 
-Milestone M1 prioritizes an end-to-end, correct, self-contained analytical query engine. The following architectural limitations are explicitly documented:
-
-### 1.1 Memory Boundedness (Spill to Disk)
-- **Hash Join Build Side:** The right table of an `INNER JOIN` is materialized in memory in a hash table during the build phase.
-- **Aggregation Group State:** Hash aggregation accumulates distinct group keys and their running accumulators in an in-memory hash map.
-- **Sorting Buffer:** `ORDER BY` collects all input rows before performing in-memory `std::stable_sort`.
-- *Note:* While the scan and filter pipeline streams in 1,024-row batches without buffering full input files, operators that block on pipeline breakers (sort, build join, group aggregate) remain memory-resident in M1. No claim of memory-bounded execution is made for M1.
-
-### 1.2 SQL Dialect Boundaries
-- **Outer Joins:** `LEFT JOIN`, `RIGHT JOIN`, and `FULL OUTER JOIN` are unsupported.
-- **Subqueries:** Scalar subqueries, correlated subqueries, and `IN (SELECT ...)` are unsupported.
-- **Set Operations:** `UNION`, `INTERSECT`, `EXCEPT` are unsupported.
-- **Window Functions:** `OVER (PARTITION BY ... ORDER BY ...)` is unsupported.
-- **DISTINCT Aggregates:** `COUNT(DISTINCT col)` is unsupported.
-- **Write Operations:** No DDL or DML (`CREATE TABLE`, `INSERT`, `UPDATE`, `DELETE`). Axiom M1 is a pure analytical query engine over external CSV files.
+Milestone M2 successfully delivered out-of-core, memory-bounded query execution:
+- **Centralized Memory Budgeting:** Enforced via `QueryMemoryManager` and RAII `MemoryReservation`.
+- **Grace Hash Join:** Partitions build and probe tables into $B=16$ disk files via `SpillManager` when memory limits are reached.
+- **External Merge Sort:** Spills sorted runs using `BinarySerializer` AXMB v1 and performs priority-queue multi-way merge.
+- **Top-K Bounded Heap Optimization:** Evaluates `ORDER BY ... LIMIT K` in $O(N \log K)$ time and $O(K)$ space with zero disk spilling.
+- **External Hash Aggregation:** Hash-partitions large groups into $P=16$ intermediate partitions.
+- **Multi-GB Scalability:** Verified correct execution on datasets up to 5 GB (164.4 million rows) under strict 512 MB memory limit.
 
 ---
 
-## 2. Integration Points for Milestone M2
+## 2. Disclosed Technical Limitations in M2
 
-The Axiom architecture was structured to cleanly accommodate M2 requirements:
-1. **Memory Accounting Interface:**
-   - Operators can wrap memory allocations through an abstract `MemoryManager` / `MemoryPool`.
-2. **External Merge Sort:**
-   - Replace in-memory `collect_and_sort()` with an external merge sort operator that flushes sorted runs of `RecordBatch` to temporary files on disk when a memory limit is reached.
-3. **Grace Hash Join:**
-   - Partition build and probe tuples into hash-bucketed spill files on disk when memory thresholds are exceeded.
-4. **Partitioned Hash Aggregation:**
-   - Spill aggregation buckets when grouping large high-cardinality datasets.
+### 2.1 Execution & Runtime
+1. **Single-Threaded Execution:** Operators execute sequentially on a single core. Multi-threaded intra-operator parallelism is deferred to Milestone M3.
+2. **Text CSV Input Overhead:** Raw text parsing and ASCII-to-binary conversions remain the primary execution bottleneck during table scans. Columnar binary formats are planned for subsequent milestones.
+3. **Non-Equijoins:** Fall back to in-memory block nested-loop joins, as arbitrary inequality conditions cannot be hash-partitioned.
+4. **Key Skew in Hash Join:** If a single join key has millions of duplicates that exceed the total operator memory budget, hash partitioning cannot split those identical keys across buckets.
 
+### 2.2 SQL Dialect Boundaries
+1. **Outer Joins:** `LEFT JOIN`, `RIGHT JOIN`, `FULL OUTER JOIN` are unsupported.
+2. **Subqueries & CTEs:** `IN (SELECT ...)`, correlated subqueries, and `WITH ...` CTEs are unsupported.
+3. **Window Functions:** `OVER (PARTITION BY ... ORDER BY ...)` is unsupported.
+4. **Set Operations:** `UNION`, `INTERSECT`, `EXCEPT` are unsupported.
+5. **DISTINCT Aggregates:** `COUNT(DISTINCT col)` is unsupported.
+6. **Mutations:** DML / DDL statements (`INSERT`, `UPDATE`, `DELETE`) are unsupported. Axiom is a read-only analytical query engine.
+
+---
+
+## 3. Integration Points for Milestone M3
+1. **Morsel-Driven Parallelism:** Chunked task scheduler for multi-threaded table scans, parallel hash join build, and parallel aggregation.
+2. **Columnar Binary Storage (Native Engine Format):** High-throughput persistent format to bypass CSV parsing overhead.
+3. **Adaptive Skew Handling:** Dynamic re-partitioning and block nested loop fallback for oversized single-key partitions.

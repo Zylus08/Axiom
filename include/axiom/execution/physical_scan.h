@@ -14,7 +14,8 @@ public:
           alias_(std::move(alias)),
           batch_size_(batch_size) {}
 
-    void init() override {
+    void init(QueryExecutionContext* ctx = nullptr) override {
+        ctx_ = ctx;
         reader_ = std::make_unique<CsvReader>(table_def_.file_path, output_schema_, table_def_.options);
     }
 

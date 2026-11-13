@@ -2,8 +2,10 @@
 
 #include "axiom/execution/physical_operator.h"
 #include "axiom/execution/expression_evaluator.h"
+#include "axiom/storage/spill_manager.h"
 #include <unordered_map>
 #include <vector>
+#include <memory>
 
 namespace axiom {
 
@@ -28,11 +30,14 @@ public:
                      Schema schema,
                      size_t batch_size = 1024);
 
-    void init() override;
+    void init(QueryExecutionContext* ctx = nullptr) override;
     std::unique_ptr<RecordBatch> next() override;
     void close() override;
 
     [[nodiscard]] std::string to_string(size_t indent = 0) const override;
+
+    [[nodiscard]] size_t spilled_partitions_count() const noexcept { return build_partitions_.size() + probe_partitions_.size(); }
+    [[nodiscard]] size_t spilled_bytes() const noexcept { return spilled_bytes_; }
 
 private:
     JoinType join_type_;
@@ -45,18 +50,31 @@ private:
     std::unique_ptr<BoundExpr> right_key_expr_;
 
     // In-memory hash table for build side (right child)
-    // Maps join key to list of right-side row vectors
     std::unordered_multimap<Value, std::vector<Value>, ValueVectorHasher, ValueVectorEqual> hash_table_;
     std::vector<std::vector<Value>> all_build_rows_; // For non-equijoin fallback
 
-    // Probe state
+    // In-memory probe state
     std::unique_ptr<RecordBatch> current_probe_batch_;
     size_t current_probe_row_idx_{0};
     bool probe_finished_{false};
 
+    // External Grace Hash Join state
+    bool is_spilled_{false};
+    static constexpr size_t NUM_PARTITIONS = 16;
+    std::vector<std::unique_ptr<SpillPartition>> build_partitions_;
+    std::vector<std::unique_ptr<SpillPartition>> probe_partitions_;
+    size_t current_partition_idx_{0};
+    std::unordered_multimap<Value, std::vector<Value>, ValueVectorHasher, ValueVectorEqual> partition_hash_table_;
+    std::unique_ptr<RecordBatch> current_partition_probe_batch_;
+    size_t current_partition_probe_row_{0};
+    size_t spilled_bytes_{0};
+
     void analyze_condition();
-    void build_hash_table();
+    void build_in_memory_hash_table();
+    void execute_grace_hash_partitioning();
+    bool load_next_partition();
+    std::unique_ptr<RecordBatch> next_in_memory();
+    std::unique_ptr<RecordBatch> next_spilled();
 };
 
 } // namespace axiom
-

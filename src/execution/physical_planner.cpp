@@ -65,6 +65,36 @@ std::shared_ptr<PhysicalOperator> PhysicalPlanner::plan(const std::shared_ptr<Lo
         }
         case LogicalOperatorType::Limit: {
             const auto* limit = static_cast<const LogicalLimit*>(logical_plan.get());
+            if (!logical_plan->children().empty()) {
+                auto child_logical = logical_plan->children()[0];
+                if (child_logical->type() == LogicalOperatorType::Sort) {
+                    const auto* sort = static_cast<const LogicalSort*>(child_logical.get());
+                    auto child = plan(child_logical->children()[0]);
+                    std::vector<BoundOrderItem> order_items;
+                    for (const auto& item : sort->order_by()) {
+                        order_items.push_back(BoundOrderItem{item.expr->clone(), item.is_asc, item.nulls_first});
+                    }
+                    return std::make_shared<PhysicalSort>(std::move(child), std::move(order_items), batch_size_, limit->limit(), limit->offset());
+                }
+                if (child_logical->type() == LogicalOperatorType::Projection &&
+                    !child_logical->children().empty() &&
+                    child_logical->children()[0]->type() == LogicalOperatorType::Sort) {
+                    const auto* proj = static_cast<const LogicalProjection*>(child_logical.get());
+                    const auto* sort = static_cast<const LogicalSort*>(child_logical->children()[0].get());
+                    auto sort_child = plan(sort->children()[0]);
+                    std::vector<BoundOrderItem> order_items;
+                    for (const auto& item : sort->order_by()) {
+                        order_items.push_back(BoundOrderItem{item.expr->clone(), item.is_asc, item.nulls_first});
+                    }
+                    auto phys_sort = std::make_shared<PhysicalSort>(std::move(sort_child), std::move(order_items), batch_size_, limit->limit(), limit->offset());
+                    std::vector<BoundSelectItem> items;
+                    for (const auto& item : proj->select_list()) {
+                        items.push_back(BoundSelectItem{item.expr->clone(), item.name});
+                    }
+                    auto phys_proj = std::make_shared<PhysicalProjection>(std::move(phys_sort), std::move(items), proj->output_schema());
+                    return std::make_shared<PhysicalLimit>(std::move(phys_proj), limit->limit(), limit->offset());
+                }
+            }
             auto child = plan(logical_plan->children()[0]);
             return std::make_shared<PhysicalLimit>(std::move(child), limit->limit(), limit->offset());
         }

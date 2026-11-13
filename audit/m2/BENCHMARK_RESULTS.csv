@@ -1,0 +1,13 @@
+scale,workload_id,workload_name,dataset_mb,memory_limit,axiom_time_ms,axiom_peak_rss_mb,axiom_spilled_mb,axiom_spill_count,duckdb_time_ms,axiom_vs_duckdb_ratio
+100mb,Q1_AGG_FILTER,Filtered Aggregation (Scalar & Group),100.0,32MB,4230.82,6.8,91.13,16,25.12,168.44x
+100mb,Q2_HIGH_CARD_AGG,High-Cardinality Group By (Disk Spilling Agg),100.0,32MB,4630.39,9.8,81.32,16,91.52,50.59x
+100mb,Q3_EQUI_JOIN,Equi-Join with Dimension Table (Grace Hash Join),100.0,32MB,8224.69,12.1,158.60,48,45.43,181.04x
+100mb,Q4_TOPK_SORT,Top-K Bounded Heap Sort,100.0,32MB,2760.42,5.0,0.00,0,10.43,264.57x
+1gb,Q1_AGG_FILTER,Filtered Aggregation (Scalar & Group),1024.0,256MB,28045.82,5.1,0.00,0,137.62,203.78x
+1gb,Q2_HIGH_CARD_AGG,High-Cardinality Group By (Disk Spilling Agg),1024.0,256MB,32317.80,127.8,0.00,0,N/A,N/A
+1gb,Q3_EQUI_JOIN,Equi-Join with Dimension Table (Grace Hash Join),1024.0,256MB,40848.53,68.1,0.00,0,312.07,130.90x
+1gb,Q4_TOPK_SORT,Top-K Bounded Heap Sort,1024.0,256MB,25069.33,5.0,0.00,0,59.43,421.81x
+5gb,Q1_AGG_FILTER,Filtered Aggregation (Scalar & Group),5120.0,512MB,137963.73,5.2,0.00,0,N/A,N/A
+5gb,Q2_HIGH_CARD_AGG,High-Cardinality Group By (Disk Spilling Agg),5120.0,512MB,171630.19,313.5,0.00,0,N/A,N/A
+5gb,Q3_EQUI_JOIN,Equi-Join with Dimension Table (Grace Hash Join),5120.0,512MB,208320.60,159.2,0.00,0,N/A,N/A
+5gb,Q4_TOPK_SORT,Top-K Bounded Heap Sort,5120.0,512MB,121354.35,5.0,0.00,0,N/A,N/A
