@@ -1,0 +1,6 @@
+id,name,salary,active
+1,"John, Doe",50000.5,true
+2,"Jane ""The Boss"" Smith",75000.0,false
+3,"Line1
+Line2",12000.25,true
+4,,NULL,false

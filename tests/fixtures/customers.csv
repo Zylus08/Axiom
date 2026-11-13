@@ -1,0 +1,6 @@
+id,name,country,active
+1,Alice,USA,true
+2,Bob,UK,true
+3,Charlie,USA,false
+4,David,Canada,true
+5,Eve,Canada,false
