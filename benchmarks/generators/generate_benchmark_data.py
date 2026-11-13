@@ -48,3 +48,4 @@ if __name__ == "__main__":
     parser.add_argument("--out", type=str, default="benchmarks/data")
     args = parser.parse_args()
     generate_benchmark_data(args.orders, args.items, args.out)
+

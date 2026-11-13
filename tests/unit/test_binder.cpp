@@ -67,3 +67,4 @@ void run_binder_tests() {
         ASSERT_EQ(bound->aggregates.size(), 1);
     }
 }
+

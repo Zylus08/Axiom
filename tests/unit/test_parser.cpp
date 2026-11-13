@@ -102,3 +102,4 @@ void run_parser_tests() {
     ASSERT_THROWS(parse_sql("SELECT * FROM tbl GROUP BY"), AxiomException);
     ASSERT_THROWS(parse_sql("SELECT * FROM tbl LIMIT abc"), AxiomException);
 }
+

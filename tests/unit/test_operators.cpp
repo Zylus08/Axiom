@@ -158,3 +158,4 @@ void run_operators_tests() {
         ASSERT_TRUE(agg_op.next() == nullptr);
     }
 }
+

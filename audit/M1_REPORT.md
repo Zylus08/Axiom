@@ -51,3 +51,4 @@ The engine successfully compiles under modern C++20 on Windows (MSVC 2022 BuildT
    - *Resolution:* Updated `Binder::bind_column_ref` to clone any bound expression matching a select alias, which the logical planner then rewrites to the aggregate output column.
 4. **Defect:** MSVC parallel build resource contention when compiling 16 jobs concurrently with `/FS`.
    - *Resolution:* Switched debug format to `/Z7` and limited Ninja concurrency with `-j 4`.
+

@@ -123,3 +123,4 @@ void run_types_tests() {
     ASSERT_FALSE(v_null.exact_equal(v10));
     ASSERT_TRUE(v10.exact_equal(Value::make_bigint(10)));
 }
+

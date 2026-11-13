@@ -92,3 +92,4 @@ def generate_fixtures(out_dir="tests/fixtures"):
 
 if __name__ == "__main__":
     generate_fixtures()
+

@@ -149,3 +149,4 @@ The execution engine uses a batch-oriented iterator model (`Volcano` model opera
 - **Strict RAII:** All dynamic allocations are managed via `std::unique_ptr` and `std::shared_ptr`. Zero uncontrolled raw owning pointers.
 - **Warning Clean:** Compiles warning-free on MSVC 2022 with `/W4`, `/permissive-`, and `/Z7`.
 - **Exception Safety:** Structured exceptions inherit from `AxiomException` with categorized error codes and source locations.
+
