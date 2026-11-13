@@ -1,0 +1,17 @@
+id,category,price,stock,in_stock
+1,electronics,299.99,15,true
+2,electronics,49.5,100,true
+3,electronics,1200.0,5,true
+4,books,19.99,50,true
+5,books,9.99,0,false
+6,books,29.95,25,true
+7,clothing,45.0,30,true
+8,clothing,85.5,12,true
+9,clothing,15.0,0,false
+10,home,150.0,8,true
+11,home,25.5,40,true
+12,home,350.0,3,true
+13,,99.0,10,true
+14,special,,5,true
+15,special,-10.5,-2,false
+16,,,,false

@@ -1,0 +1,11 @@
+build/
+.vs/
+out/
+benchmarks/data/
+*.exe
+*.obj
+*.lib
+*.pdb
+*.ilk
+.ninja_*
+ninja.log
