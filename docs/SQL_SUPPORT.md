@@ -1,8 +1,8 @@
-# Axiom SQL Support Matrix (Milestone M1)
+# Axiom SQL Support Matrix (Milestone M2)
 
 ## 1. Supported SQL Dialect
 
-Axiom M1 supports an analytical subset of SQL-92 / SQL:1999 standard queries with strict three-valued logic and type checking.
+Axiom supports an analytical subset of SQL-92 / SQL:1999 standard queries with strict three-valued logic, explicit type coercion, and out-of-core execution under memory bounds.
 
 ### 1.1 Statements & Clauses
 
@@ -10,20 +10,21 @@ Axiom M1 supports an analytical subset of SQL-92 / SQL:1999 standard queries wit
 | :--- | :---: | :--- |
 | `SELECT` | Yes | Column list, expressions, aliases (`AS alias`), `*`, `table.*` |
 | `FROM` | Yes | Base table references, table aliases (`FROM table [AS] alias`) |
-| `INNER JOIN ... ON` | Yes | Multi-table inner joins with arbitrary condition and equijoins |
-| `WHERE` | Yes | Boolean filtering predicates |
-| `GROUP BY` | Yes | Grouping by single or multiple keys, with grouping on NULL keys |
+| `INNER JOIN ... ON` | Yes | Inner equijoins with Grace Hash Join spilling; non-equijoins with nested loop |
+| `WHERE` | Yes | Boolean filtering predicates with rule-based pushdown to scans |
+| `GROUP BY` | Yes | Single or multi-key grouping with hash-partitioned external spilling |
 | `HAVING` | Yes | Filter over aggregated groups and group keys |
-| `ORDER BY` | Yes | Sort by expressions or select aliases, `ASC` / `DESC`, deterministic |
-| `LIMIT` | Yes | Maximum rows returned, short-circuits operator pull |
+| `ORDER BY` | Yes | `ASC` / `DESC`, `NULLS FIRST` / `NULLS LAST`, external merge sort |
+| `LIMIT` | Yes | Row count cap; pushdown into `PhysicalSort` via Top-K bounded max-heap |
 | `OFFSET` | Yes | Skips leading rows |
 | `EXPLAIN` | Yes | Visualizes logical and physical plan execution trees |
+| `EXPLAIN ANALYZE` | Yes | Executes query and displays detailed operator telemetry and profile |
 
 ---
 
 ### 1.2 Data Types
 
-| Type Name | Internal Representation | Format / Aliases |
+| Type Name | Internal Representation | Supported Syntax / Aliases |
 | :--- | :--- | :--- |
 | `BIGINT` | Signed 64-bit integer (`int64_t`) | `BIGINT`, `INT`, `INTEGER`, `INT64` |
 | `DOUBLE` | 64-bit IEEE-754 float (`double`) | `DOUBLE`, `FLOAT`, `REAL`, `FLOAT64` |
@@ -49,38 +50,39 @@ Axiom M1 supports an analytical subset of SQL-92 / SQL:1999 standard queries wit
 - `<=` (Less Than or Equal)
 - `>` (Greater Than)
 - `>=` (Greater Than or Equal)
-- `IS NULL` (Returns `true` if operand is NULL)
-- `IS NOT NULL` (Returns `true` if operand is non-NULL)
 
 #### Logical Operators (Three-Valued Logic)
-- `AND`: `false AND NULL -> false`, `true AND NULL -> NULL`
-- `OR`: `true OR NULL -> true`, `false OR NULL -> NULL`
-- `NOT`: `NOT NULL -> NULL`
+- `AND`
+- `OR`
+- `NOT`
+- `IS NULL`
+- `IS NOT NULL`
 
 ---
 
 ### 1.4 Aggregate Functions
 
-| Aggregate | Description | Empty Table (No Group By) |
+| Aggregate | Description | Empty Table Return |
 | :--- | :--- | :---: |
-| `COUNT(*)` | Counts total rows in group, including NULLs | `0` |
-| `COUNT(expr)` | Counts non-NULL values in group | `0` |
-| `SUM(expr)` | Computes arithmetic sum of non-NULL values | `NULL` |
-| `AVG(expr)` | Computes arithmetic mean of non-NULL values | `NULL` |
-| `MIN(expr)` | Finds minimum non-NULL value | `NULL` |
-| `MAX(expr)` | Finds maximum non-NULL value | `NULL` |
+| `COUNT(*)` | Counts all rows in group | `0` |
+| `COUNT(expr)` | Counts non-null evaluations of `expr` | `0` |
+| `SUM(expr)` | Sum of values (bigint or double) | `NULL` |
+| `AVG(expr)` | Arithmetic mean (returns double) | `NULL` |
+| `MIN(expr)` | Minimum value (preserves type) | `NULL` |
+| `MAX(expr)` | Maximum value (preserves type) | `NULL` |
 
 ---
 
-## 2. Unsupported Syntax & Future Scope (Post-M1)
+### 1.5 CLI Execution Options
 
-The following features are intentionally outside the M1 scope and will be rejected with clear syntactic or semantic diagnostic errors:
-- `LEFT OUTER JOIN`, `RIGHT OUTER JOIN`, `FULL OUTER JOIN`
-- Subqueries in `FROM`, `WHERE`, or `SELECT` (e.g. `IN (SELECT ...)`, scalar subqueries)
-- `DISTINCT` in `SELECT` or aggregate functions (e.g. `COUNT(DISTINCT x)`)
-- Set operations: `UNION`, `INTERSECT`, `EXCEPT`
-- Window functions: `OVER (PARTITION BY ...)`
-- `CASE WHEN ... THEN ... ELSE END` expressions
-- `LIKE` / Regular expressions
-- `INSERT`, `UPDATE`, `DELETE`, `CREATE TABLE` (Axiom M1 is an analytical engine querying CSV datasets)
-
+| Flag | Argument | Description |
+| :--- | :--- | :--- |
+| `-e, --query` | `<sql>` | Execute SQL query string |
+| `-f, --file` | `<path>` | Execute SQL query from file |
+| `-t, --table` | `<name>=<csv>[:schema]` | Register CSV table with auto-inferred or explicit schema |
+| `--memory-limit` | `<size>` | Set query memory budget (e.g. `256MB`, `1GB`) |
+| `--temp-dir` | `<path>` | Set directory for temporary spill partitions |
+| `--max-temp-disk`| `<size>` | Set disk quota for temporary spill files |
+| `--profile` | None | Output query execution time, peak memory, and spill stats |
+| `--explain-analyze`| None | Execute query and output plan tree and execution telemetry |
+| `--format` | `<fmt>` | Output formatting: `table` (default), `csv`, `json` |

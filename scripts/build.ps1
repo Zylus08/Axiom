@@ -31,7 +31,7 @@ if ($Clean -and (Test-Path $buildDir)) {
 
 Write-Host "==> Building Axiom [$Config]..."
 
-$cmd = "call `"$vsDevCmd`" -arch=x64 && cmake -B $buildDir -G Ninja -DCMAKE_BUILD_TYPE=$Config && cmake --build $buildDir --config $Config -- -j 4"
+$cmd = "call `"$vsDevCmd`" -arch=x64 && cmake -B $buildDir -G Ninja -DCMAKE_BUILD_TYPE=$Config && cmake --build $buildDir --config $Config --parallel 2"
 cmd.exe /c $cmd
 
 if ($LASTEXITCODE -ne 0) {

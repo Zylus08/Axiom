@@ -14,8 +14,9 @@ public:
         add_child(std::move(child));
     }
 
-    void init() override {
-        children_[0]->init();
+    void init(QueryExecutionContext* ctx = nullptr) override {
+        ctx_ = ctx;
+        children_[0]->init(ctx);
     }
 
     std::unique_ptr<RecordBatch> next() override {

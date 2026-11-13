@@ -17,7 +17,11 @@ set(AXIOM_SOURCES
     src/types/value.cpp
     src/common/record_batch.cpp
     src/common/query_engine.cpp
+    src/common/memory_manager.cpp
+    src/common/query_context.cpp
     src/storage/csv_reader.cpp
+    src/storage/binary_serializer.cpp
+    src/storage/spill_manager.cpp
     src/parser/lexer.cpp
     src/parser/ast.cpp
     src/parser/parser.cpp
@@ -25,6 +29,7 @@ set(AXIOM_SOURCES
     src/binder/binder.cpp
     src/planner/logical_plan.cpp
     src/planner/logical_planner.cpp
+    src/planner/logical_optimizer.cpp
     src/execution/expression_evaluator.cpp
     src/execution/physical_hash_join.cpp
     src/execution/physical_hash_aggregate.cpp
@@ -50,6 +55,7 @@ add_executable(axiom_unit_tests
     tests/unit/test_csv_reader.cpp
     tests/unit/test_binder.cpp
     tests/unit/test_operators.cpp
+    tests/unit/test_m2_out_of_core.cpp
 )
 target_include_directories(axiom_unit_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(axiom_unit_tests PRIVATE axiom_core)

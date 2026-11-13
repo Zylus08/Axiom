@@ -7,6 +7,8 @@
 
 namespace axiom {
 
+class QueryExecutionContext;
+
 enum class PhysicalOperatorType {
     Scan,
     Filter,
@@ -24,7 +26,8 @@ public:
     [[nodiscard]] PhysicalOperatorType type() const noexcept { return type_; }
     [[nodiscard]] const Schema& output_schema() const noexcept { return output_schema_; }
 
-    virtual void init() = 0;
+    virtual void init() { init(nullptr); }
+    virtual void init(QueryExecutionContext* ctx) { ctx_ = ctx; }
     [[nodiscard]] virtual std::unique_ptr<RecordBatch> next() = 0;
     virtual void close() = 0;
 
@@ -40,6 +43,7 @@ protected:
     PhysicalOperatorType type_;
     Schema output_schema_;
     std::vector<std::shared_ptr<PhysicalOperator>> children_;
+    QueryExecutionContext* ctx_{nullptr};
 
     static std::string make_indent(size_t indent) {
         return std::string(indent * 2, ' ');

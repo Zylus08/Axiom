@@ -1,17 +1,22 @@
-# Project Axiom Architecture Specification (Milestone M1)
+# Project Axiom Architecture Specification (Milestone M2)
 
 ## 1. System Overview
 
-**Project Axiom** is an analytical SQL database engine built from scratch in modern C++20. It implements a complete, self-contained relational query processing pipeline:
+**Project Axiom** is an out-of-core, memory-bounded analytical SQL database engine built from scratch in modern C++20. It implements a complete, self-contained relational query processing pipeline:
 - Lexical analysis with source location tracking
 - Recursive-descent and Pratt-style expression parsing
 - Catalog registration and streaming RFC-4180 CSV storage
 - Semantic analysis, column resolution, and validation (Binder)
-- Logical query plan construction and expression rewriting
-- Vectorized physical query execution using iterator-batch operators
-- Command-line interface with interactive and batch execution modes
+- Logical query plan construction and rule-based optimization (`LogicalOptimizer`)
+- Centralized query memory management with process working set instrumentation (`QueryMemoryManager`)
+- Binary temporary disk spilling infrastructure (`BinarySerializer`, `SpillManager`)
+- Out-of-core physical execution operators:
+  - Grace Hash Join with adaptive disk partitioning
+  - External Hash Partitioned Aggregation
+  - External Merge Sort with Top-K bounded max-heap optimization
+- Command-line interface with interactive, batch, and profiling modes (`--profile`, `--explain-analyze`, `--memory-limit`, `--temp-dir`)
 
-Axiom does not embed, fork, or delegate execution to SQLite, DuckDB, PostgreSQL, or any third-party parser or execution framework.
+Axiom does not embed, fork, or delegate execution to SQLite, DuckDB, PostgreSQL, or any third-party parser, optimizer, or database engine.
 
 ```
                           SQL Query String
@@ -33,120 +38,61 @@ Axiom does not embed, fork, or delegate execution to SQLite, DuckDB, PostgreSQL,
                                  │ Bound AST (Types, Scopes, Resolved Columns)
                                  ▼
                          ┌───────────────┐
-                         │Logical Planner│  (Logical Operator Tree)
+                         │Logical Planner│  (Initial Logical Operator Tree)
                          └───────┬───────┘
                                  │ Logical Plan
+                                 ▼
+                         ┌───────────────┐
+                         │Logical Optimiz│  (Predicate Pushdown, Join Sides, Top-K)
+                         └───────┬───────┘
+                                 │ Optimized Logical Plan
                                  ▼
                          ┌───────────────┐
                          │Physical Plan. │  (Physical Operator Tree)
                          └───────┬───────┘
                                  │ Physical Operators (Init, Next, Close)
                                  ▼
-                         ┌───────────────┐
-                         │Execution Engine│ ◄─── CSV Storage (Chunked I/O)
-                         └───────┬───────┘
+                         ┌───────────────┐  ◄─── QueryMemoryManager (Budget & RSS)
+                         │Execution Engine│ ◄─── SpillManager (Binary AXMB Spilling)
+                         └───────┬───────┘  ◄─── CSV Storage (Chunked I/O)
                                  │ RecordBatches
                                  ▼
-                           QueryResult
-                       (Table / CSV / JSON)
+                            QueryResult (Data, Profile, & Resource Telemetry)
 ```
 
 ---
 
-## 2. Component Architecture
+## 2. Milestone M2 Subsystems
 
-### 2.1 Type System & Value Representation (`axiom::Value`)
+### 2.1 Centralized Query Memory Management
+`QueryMemoryManager` provides centralized memory budgeting across all physical operators:
+- Operators create RAII `MemoryReservation` objects.
+- Reservations track actual container capacity, hash table bucket pointers, and dynamic string payloads.
+- Continuously samples OS working set via Windows API `GetProcessMemoryInfo`.
+- Memory limits can be configured via CLI (`--memory-limit 256MB`) or programmatic `QueryOptions`.
 
-The engine provides a tagged union `Value` supporting five fundamental types:
-1. `BIGINT`: 64-bit signed integer (`int64_t`)
-2. `DOUBLE`: 64-bit IEEE-754 double precision floating point (`double`)
-3. `VARCHAR`: Dynamic UTF-8 string (`std::string`)
-4. `BOOLEAN`: Boolean (`bool`)
-5. `NULL`: SQL 3-valued unknown representation
+### 2.2 Binary Temporary Storage Format (`AXMB` Version 1)
+All temporary disk spilling utilizes the custom binary format `AXMB`:
+- Magic bytes `0x424D5841` ('AXMB') and version identifier.
+- Column descriptions, row counts, and per-column bit-packed NULL bitmaps.
+- Contiguous typed value payloads without text conversion overhead.
+- Tail 32-bit FNV-1a checksums for corruption and truncation detection.
 
-#### SQL Semantics
-- **Three-Valued Logic:**
-  - `TRUE AND NULL -> NULL`, `FALSE AND NULL -> FALSE`
-  - `TRUE OR NULL -> TRUE`, `FALSE OR NULL -> NULL`
-  - `NOT NULL -> NULL`
-- **Arithmetic:** Division by zero and modulo by zero trigger actionable exceptions (`ErrorCategory::Execution`). Implicit type promotion coerces `BIGINT` to `DOUBLE` when operands have mixed numeric types.
-- **Comparison & Ordering:** Strict SQL `NULL` propagation (comparisons with `NULL` return `NULL`). Deterministic sorting comparator with explicit `NULLS FIRST` / `NULLS LAST` logic and tie-breaking.
-- **Grouping:** Exact equality (`exact_equal`) and hashing (`hash()`) treat `NULL == NULL` for grouping keys, compliant with the SQL standard.
+### 2.3 Out-of-Core Physical Operators
+1. **Grace Hash Join (`PhysicalHashJoin`):**
+   - In-memory fast path when build table fits within memory reservation.
+   - Grace hash partitioning into $B=16$ spilled disk partitions on build and probe keys when memory limit is constrained.
+   - Sequential partition pair processing: only 1 build partition and 1 probe batch in RAM at any time.
+   - Immediate partition file deletion upon completion.
+2. **External Hash Aggregation (`PhysicalHashAggregate`):**
+   - Scalar aggregations (`group_by.empty()`) execute in constant $O(1)$ memory without spilling.
+   - Grouped aggregations hash-partition incoming rows into $P=16$ disk partitions by group key hash.
+   - Partitions are aggregated sequentially, bounding resident memory to $1/P$ of unique groups.
+3. **External Sort with Top-K Heap (`PhysicalSort`):**
+   - Top-K Bounded Max-Heap: When `ORDER BY ... LIMIT K` ($K \le 50,000$) is executed, maintains a bounded max-heap of size $K$ in memory. Runs in $O(N \log K)$ time with zero disk spilling.
+   - External Merge Sort: Generates sorted runs bounded by operator budget, spills runs via `BinarySerializer`, and merges them using a priority queue multi-way merge.
 
----
-
-### 2.2 Storage & Chunked CSV Reading (`axiom::CsvReader`)
-
-The CSV reader provides high-performance, streaming ingestion without materializing the entire file in RAM:
-- **RFC-4180 Compliance:** Handles quoted fields, embedded linebreaks (`\n` and `\r\n`), embedded delimiters (commas inside quotes), and escaped quotes (`""` and `\"`).
-- **Chunked Reading:** Configurable internal 64KB I/O buffer with `read_batch(max_rows)` producing bounded `RecordBatch` instances.
-- **NULL Handling:** Distinguishes unquoted empty values, explicit configured NULL strings (e.g. `"NULL"`), and empty strings.
-- **Fast Numeric Parsing:** Uses `<charconv>` `std::from_chars` for high-throughput integer conversion.
-
----
-
-### 2.3 Lexer and Parser
-
-- **Lexer (`axiom::Lexer`):** Scans SQL text into a stream of tokens, tracking 1-based line and column coordinates. Supports line comments (`-- ...`) and block comments (`/* ... */`).
-- **Parser (`axiom::Parser`):**
-  - **Pratt Precedence Climbing:** Explicit precedence hierarchy for operators:
-    `OR` < `AND` < `NOT` < Comparisons (`=`, `!=`, `<>`, `<`, `<=`, `>`, `>=`, `IS NULL`, `IS NOT NULL`) < Additive (`+`, `-`) < Multiplicative (`*`, `/`, `%`) < Unary (`+`, `-`).
-  - **Statement Syntax:** Full parsing for `SELECT`, `FROM`, `INNER JOIN ... ON`, `WHERE`, `GROUP BY`, `HAVING`, `ORDER BY`, `LIMIT`, and `OFFSET`.
-  - **Diagnostics:** Produces descriptive syntax errors with source location information.
-
----
-
-### 2.4 Binder & Semantic Analysis (`axiom::Binder`)
-
-The binder resolves names against the catalog and validates semantic constraints:
-- **Table Scoping:** Tracks active tables in `FROM` and `JOIN` clauses, assigning global column offsets for composite tuples.
-- **Ambiguity Detection:** Detects and reports ambiguous column references across joined tables.
-- **Alias Propagation:** Resolves column aliases defined in `SELECT` for use in `ORDER BY` clauses.
-- **GROUP BY Enforcement:** Validates that every non-aggregate expression in `SELECT`, `HAVING`, and `ORDER BY` matches a `GROUP BY` key.
-- **Aggregate Placement:** Rejects aggregates placed in `WHERE` clauses or nested inside other aggregates.
-- **Star Expansion:** Expands `*` and `table.*` into concrete bound column references.
-
----
-
-### 2.5 Logical Planning & Rewriting
-
-Translates bound ASTs into a logical operator tree:
-- `LogicalScan`: References base table definition and schema.
-- `LogicalJoin`: Inner join with join predicate.
-- `LogicalFilter`: Boolean selection condition.
-- `LogicalAggregate`: Grouping keys and unique aggregate functions.
-- `LogicalSort`: Order items with ASC/DESC and NULL ordering flags.
-- `LogicalProjection`: Output expressions and column aliases.
-- `LogicalLimit`: Row count and offset limits.
-
-#### Aggregate Expression Rewriting
-Downstream operators (HAVING, Sort, Projection) are rewritten:
-- Expressions matching group keys are mapped to key column indices `0 .. k-1`.
-- Aggregate expressions are mapped to aggregate result columns `k .. k+m-1`.
-
----
-
-### 2.6 Vectorized Physical Execution
-
-The execution engine uses a batch-oriented iterator model (`Volcano` model operating over `RecordBatch` vectors of configurable size, default 1,024 rows):
-- **Lifecycle:** Operators expose `init()`, `next() -> std::unique_ptr<RecordBatch>`, and `close()`.
-- **`PhysicalScan`:** Streams batches from disk using `CsvReader`.
-- **`PhysicalFilter`:** Evaluates predicates in batch, producing a selection vector and sliced batch.
-- **`PhysicalProjection`:** Evaluates projected expressions column-by-column.
-- **`PhysicalHashJoin`:**
-  - Build phase: Hashes build table on join key into an in-memory hash table.
-  - Probe phase: Probes hash table batch-by-batch from left child, correctly handling duplicate keys (join multiplicity) and skipping NULL keys.
-- **`PhysicalHashAggregate`:**
-  - Hashes composite group keys and maintains running accumulators for `COUNT(*)`, `COUNT(col)`, `SUM`, `AVG`, `MIN`, `MAX`.
-  - Complies with SQL standard for empty tables: returns 0 rows for grouped queries, and 1 row (`COUNT=0`, others `NULL`) for scalar queries.
-- **`PhysicalSort`:** Collects child batches, pre-evaluates sort keys into columnar arrays, and executes a deterministic `std::stable_sort`.
-- **`PhysicalLimit`:** Tracks offset and emitted rows, short-circuiting child operator execution once the limit is met.
-
----
-
-## 3. Memory Safety & Engineering Standards
-
-- **Strict RAII:** All dynamic allocations are managed via `std::unique_ptr` and `std::shared_ptr`. Zero uncontrolled raw owning pointers.
-- **Warning Clean:** Compiles warning-free on MSVC 2022 with `/W4`, `/permissive-`, and `/Z7`.
-- **Exception Safety:** Structured exceptions inherit from `AxiomException` with categorized error codes and source locations.
-
+### 2.4 Rule-Based Logical Optimizer (`LogicalOptimizer`)
+- **Predicate Pushdown:** Decomposes filter predicates into conjuncts and pushes child-specific filters through joins down to scan operators.
+- **Top-K Pushdown:** Pushes `LogicalLimit` through `LogicalProjection` directly into `PhysicalSort`.
+- **Join-Side Selection:** Arranges smaller relations on the build side of equijoins.

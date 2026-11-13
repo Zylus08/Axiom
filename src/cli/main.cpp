@@ -9,13 +9,18 @@
 namespace {
 
 void print_help() {
-    std::cout << "Axiom Analytical SQL Engine (Milestone M1)\n"
+    std::cout << "Axiom Analytical SQL Engine (Milestone M2)\n"
               << "Usage: axiom [options]\n\n"
               << "Options:\n"
               << "  -e, --query <sql>       Execute SQL query string\n"
               << "  -f, --file <path>       Execute SQL query from file\n"
               << "  -t, --table <spec>      Register table: <name>=<csv_path>[:col1:type,col2:type,...]\n"
               << "  --batch-size <n>        Execution batch size (default: 1024)\n"
+              << "  --memory-limit <size>   Query memory limit, e.g. 256MB, 1GB (default: unlimited)\n"
+              << "  --temp-dir <path>       Temporary spill directory (default: system temp / tmp)\n"
+              << "  --max-temp-disk <size>  Maximum disk spill budget, e.g. 5GB (default: unlimited)\n"
+              << "  --profile               Display execution profiling and memory metrics\n"
+              << "  --explain-analyze       Execute query and display detailed execution profile\n"
               << "  --format <fmt>          Output format: table, csv, json (default: table)\n"
               << "  --explain               Prefix query with EXPLAIN\n"
               << "  --version               Display version\n"
@@ -23,11 +28,11 @@ void print_help() {
               << "Types: bigint (int), double (float), varchar (string), boolean (bool)\n\n"
               << "Examples:\n"
               << "  axiom -t users=users.csv:id:bigint,name:varchar,age:bigint -e \"SELECT * FROM users WHERE age > 30\"\n"
-              << "  axiom -t orders=orders.csv:id:bigint,user_id:bigint,amount:double -f query.sql --format csv\n";
+              << "  axiom -t orders=orders.csv --memory-limit 256MB --temp-dir ./tmp -f query.sql --profile\n";
 }
 
 void print_version() {
-    std::cout << "axiom version 0.1.0-m1 (x86_64-windows-msvc C++20)\n";
+    std::cout << "axiom version 0.2.0-m2 (x86_64-windows-msvc C++20 out-of-core engine)\n";
 }
 
 axiom::Schema infer_schema_from_csv(const std::string& csv_path) {
@@ -179,6 +184,7 @@ int main(int argc, char* argv[]) {
         std::string format = "table";
         size_t batch_size = 1024;
         bool explain_flag = false;
+        axiom::QueryOptions query_opts;
 
         for (int i = 1; i < argc; ++i) {
             std::string arg = argv[i];
@@ -200,6 +206,16 @@ int main(int argc, char* argv[]) {
                 format = argv[++i];
             } else if (arg == "--batch-size" && i + 1 < argc) {
                 batch_size = std::stoull(argv[++i]);
+            } else if (arg == "--memory-limit" && i + 1 < argc) {
+                query_opts.memory_limit = axiom::parse_memory_size(argv[++i]);
+            } else if (arg == "--temp-dir" && i + 1 < argc) {
+                query_opts.temp_dir = argv[++i];
+            } else if (arg == "--max-temp-disk" && i + 1 < argc) {
+                query_opts.max_temp_disk = axiom::parse_memory_size(argv[++i]);
+            } else if (arg == "--profile") {
+                query_opts.profile = true;
+            } else if (arg == "--explain-analyze") {
+                query_opts.explain_analyze = true;
             } else if (arg == "--explain") {
                 explain_flag = true;
             } else {
@@ -209,6 +225,7 @@ int main(int argc, char* argv[]) {
             }
         }
 
+        query_opts.batch_size = batch_size;
         axiom::QueryEngine engine(batch_size);
 
         for (const auto& spec : table_specs) {
@@ -231,7 +248,7 @@ int main(int argc, char* argv[]) {
                 query = "EXPLAIN " + query;
             }
 
-            auto result = engine.execute(query);
+            auto result = engine.execute(query, query_opts);
 
             if (format == "csv") {
                 std::cout << result.format_csv();
@@ -239,6 +256,10 @@ int main(int argc, char* argv[]) {
                 std::cout << result.format_json();
             } else {
                 std::cout << result.format_table();
+            }
+
+            if (query_opts.profile && !result.is_explain) {
+                std::cout << "\n" << result.telemetry.format_profile();
             }
             return 0;
         }
