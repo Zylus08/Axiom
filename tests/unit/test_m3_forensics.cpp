@@ -377,6 +377,44 @@ void test_process_memory_info_commit() {
     ASSERT_TRUE(info.peak_commit >= info.current_commit);
 }
 
+// 9. Malformed Oversized Payload Header Protection
+void test_malformed_oversized_payload_header() {
+    Schema schema({{"a", TypeKind::BigInt}});
+    std::string test_file = "tests/fixtures/oversized_payload.axmb";
+
+    {
+        std::ofstream os(test_file, std::ios::binary);
+        uint32_t magic = BinarySerializer::MAGIC;
+        uint16_t version = BinarySerializer::VERSION;
+        uint32_t num_cols = 1;
+        uint32_t num_rows = 100;
+        uint64_t malicious_payload_len = 10ULL * 1024 * 1024 * 1024; // 10 GB
+        uint32_t checksum = 0;
+
+        os.write(reinterpret_cast<const char*>(&magic), sizeof(magic));
+        os.write(reinterpret_cast<const char*>(&version), sizeof(version));
+        os.write(reinterpret_cast<const char*>(&num_cols), sizeof(num_cols));
+        os.write(reinterpret_cast<const char*>(&num_rows), sizeof(num_rows));
+        os.write(reinterpret_cast<const char*>(&malicious_payload_len), sizeof(malicious_payload_len));
+        os.write(reinterpret_cast<const char*>(&checksum), sizeof(checksum));
+    }
+
+    {
+        std::ifstream is(test_file, std::ios::binary);
+        bool caught = false;
+        try {
+            (void)BinarySerializer::read_batch(is, schema);
+        } catch (const AxiomException& e) {
+            caught = true;
+            std::string msg = e.what();
+            ASSERT_TRUE(msg.find("exceeds maximum permissible limit") != std::string::npos);
+        }
+        ASSERT_TRUE(caught);
+    }
+
+    std::filesystem::remove(test_file);
+}
+
 } // namespace
 
 void run_m3_forensics_tests() {
@@ -389,5 +427,6 @@ void run_m3_forensics_tests() {
     test_corrupt_spill_truncated();
     test_corrupt_spill_col_mismatch();
     test_process_memory_info_commit();
+    test_malformed_oversized_payload_header();
 }
 

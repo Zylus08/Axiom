@@ -66,6 +66,7 @@ private:
     void sort_in_memory_rows(std::vector<std::vector<Value>>& rows);
     void spill_current_run();
     void collect_runs();
+    void reduce_runs_hierarchical(size_t max_fan_in);
     void init_multiway_merge();
     std::unique_ptr<RecordBatch> next_merged_batch();
 

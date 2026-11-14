@@ -71,6 +71,7 @@ public:
 
     [[nodiscard]] size_t current_disk_bytes() const noexcept { return current_disk_bytes_.load(std::memory_order_relaxed); }
     [[nodiscard]] size_t peak_disk_bytes() const noexcept { return peak_disk_bytes_.load(std::memory_order_relaxed); }
+    [[nodiscard]] size_t cumulative_disk_bytes() const noexcept { return cumulative_disk_bytes_.load(std::memory_order_relaxed); }
     [[nodiscard]] size_t total_spill_count() const noexcept { return total_spill_count_.load(std::memory_order_relaxed); }
     [[nodiscard]] size_t max_disk_quota() const noexcept { return max_disk_bytes_; }
     [[nodiscard]] const std::string& temp_directory() const noexcept { return temp_dir_; }
@@ -86,6 +87,7 @@ private:
     size_t max_disk_bytes_{0};
     std::atomic<size_t> current_disk_bytes_{0};
     std::atomic<size_t> peak_disk_bytes_{0};
+    std::atomic<size_t> cumulative_disk_bytes_{0};
     std::atomic<size_t> total_spill_count_{0};
     std::atomic<uint64_t> file_sequence_{0};
 
