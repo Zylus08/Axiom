@@ -3,6 +3,7 @@
 #include "axiom/execution/physical_operator.h"
 #include "axiom/execution/expression_evaluator.h"
 #include "axiom/storage/spill_manager.h"
+#include "axiom/common/memory_manager.h"
 #include <unordered_map>
 #include <vector>
 #include <memory>
@@ -36,10 +37,12 @@ public:
 
     [[nodiscard]] std::string to_string(size_t indent = 0) const override;
 
-    [[nodiscard]] size_t spilled_partitions_count() const noexcept { return build_partitions_.size() + probe_partitions_.size(); }
+    [[nodiscard]] size_t spilled_partitions_count() const noexcept { return total_spilled_partitions_; }
     [[nodiscard]] size_t spilled_bytes() const noexcept { return spilled_bytes_; }
 
 private:
+    using HashTableType = std::unordered_multimap<Value, std::vector<Value>, ValueVectorHasher, ValueVectorEqual>;
+
     JoinType join_type_;
     std::unique_ptr<BoundExpr> condition_;
     size_t batch_size_;
@@ -50,13 +53,16 @@ private:
     std::unique_ptr<BoundExpr> right_key_expr_;
 
     // In-memory hash table for build side (right child)
-    std::unordered_multimap<Value, std::vector<Value>, ValueVectorHasher, ValueVectorEqual> hash_table_;
+    HashTableType hash_table_;
     std::vector<std::vector<Value>> all_build_rows_; // For non-equijoin fallback
 
     // In-memory probe state
     std::unique_ptr<RecordBatch> current_probe_batch_;
     size_t current_probe_row_idx_{0};
     bool probe_finished_{false};
+    HashTableType::const_iterator in_mem_match_it_;
+    HashTableType::const_iterator in_mem_match_end_;
+    bool in_mem_matching_in_progress_{false};
 
     // External Grace Hash Join state
     bool is_spilled_{false};
@@ -64,15 +70,25 @@ private:
     std::vector<std::unique_ptr<SpillPartition>> build_partitions_;
     std::vector<std::unique_ptr<SpillPartition>> probe_partitions_;
     size_t current_partition_idx_{0};
-    std::unordered_multimap<Value, std::vector<Value>, ValueVectorHasher, ValueVectorEqual> partition_hash_table_;
+    size_t active_partition_idx_{0};
+    bool partition_in_progress_{false};
+    bool current_partition_build_exhausted_{false};
+    HashTableType partition_hash_table_;
     std::unique_ptr<RecordBatch> current_partition_probe_batch_;
     size_t current_partition_probe_row_{0};
+    HashTableType::const_iterator spilled_match_it_;
+    HashTableType::const_iterator spilled_match_end_;
+    bool spilled_matching_in_progress_{false};
     size_t spilled_bytes_{0};
+    size_t total_spilled_partitions_{0};
+    std::unique_ptr<MemoryReservation> reservation_;
 
     void analyze_condition();
     void build_in_memory_hash_table();
     void execute_grace_hash_partitioning();
-    bool load_next_partition();
+    void execute_grace_hash_partitioning_with_existing(std::shared_ptr<PhysicalOperator> right_child);
+    bool advance_to_next_valid_partition();
+    bool load_next_build_block(size_t p);
     std::unique_ptr<RecordBatch> next_in_memory();
     std::unique_ptr<RecordBatch> next_spilled();
 };

@@ -4,6 +4,7 @@
 #include "axiom/execution/expression_evaluator.h"
 #include "axiom/binder/bound_statement.h"
 #include "axiom/storage/spill_manager.h"
+#include "axiom/common/memory_manager.h"
 #include <vector>
 #include <memory>
 #include <queue>
@@ -59,6 +60,7 @@ private:
     std::vector<std::unique_ptr<MergeCursor>> active_cursors_;
     size_t spilled_bytes_{0};
     size_t total_spilled_runs_{0};
+    std::unique_ptr<MemoryReservation> reservation_;
 
     void check_col_refs();
     void sort_in_memory_rows(std::vector<std::vector<Value>>& rows);

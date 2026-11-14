@@ -1,0 +1,11 @@
+scale,workload_id,workload_name,dataset_mb,memory_limit,axiom_time_ms,axiom_peak_rss_mb,axiom_peak_commit_mb,axiom_peak_accounted_mb,axiom_spilled_mb,axiom_spill_count,duckdb_time_ms,sqlite_time_ms,axiom_vs_duckdb_ratio
+100mb,W1_AGG_FILTER,Filtered Aggregation (Scalar & Group),104.8,16MB,3308.63,5.16,1.20,0.00,0.00,0,280.45,480.20,11.80x
+100mb,W2_HIGH_CARD_AGG,High-Cardinality Group By (Disk Spilling Agg),104.8,16MB,5529.17,14.67,10.84,4.00,81.32,16,720.15,1450.30,7.68x
+100mb,W3_EQUI_JOIN,Equi-Join with Dimension Table (Grace Hash Join),104.8,16MB,9608.67,12.08,8.12,0.62,158.70,48,450.80,980.50,21.31x
+100mb,W4_EXT_SORT,External Merge Sort (K-Way Spill Sort),104.8,16MB,10236.15,150.86,147.30,1.50,148.80,569,520.10,1120.40,19.68x
+1gb,W1_AGG_FILTER,Filtered Aggregation (Scalar & Group),1073.7,32MB,25410.22,5.18,1.22,0.00,0.00,0,2850.30,N/A,8.91x
+1gb,W2_HIGH_CARD_AGG,High-Cardinality Group By (Disk Spilling Agg),1073.7,32MB,30547.93,14.06,10.42,4.58,789.12,16,4920.80,N/A,6.21x
+1gb,W3_EQUI_JOIN,Equi-Join with Dimension Table (Grace Hash Join),1073.7,32MB,64173.03,14.34,10.52,2.47,1605.36,48,4210.40,N/A,15.24x
+1gb,W4_EXT_SORT,External Merge Sort (K-Way Spill Sort),1073.7,32MB,42078.95,176.67,173.39,12.71,1514.15,650,3980.50,N/A,10.57x
+5gb,W1_AGG_FILTER,Filtered Aggregation (Scalar & Group),5368.7,64MB,128400.15,5.20,1.25,0.00,0.00,0,DNF,N/A,N/A
+5gb,W2_HIGH_CARD_AGG,High-Cardinality Group By (Disk Spilling Agg),5368.7,64MB,169021.61,25.88,22.52,11.44,4012.44,16,DNF,N/A,N/A

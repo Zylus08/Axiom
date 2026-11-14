@@ -19,10 +19,12 @@ namespace axiom {
 ProcessMemoryInfo get_process_memory_info() {
     ProcessMemoryInfo info{};
 #ifdef _WIN32
-    PROCESS_MEMORY_COUNTERS pmc{};
-    if (GetProcessMemoryInfo(GetCurrentProcess(), &pmc, sizeof(pmc))) {
+    PROCESS_MEMORY_COUNTERS_EX pmc{};
+    if (GetProcessMemoryInfo(GetCurrentProcess(), reinterpret_cast<PROCESS_MEMORY_COUNTERS*>(&pmc), sizeof(pmc))) {
         info.current_rss = pmc.WorkingSetSize;
         info.peak_rss = pmc.PeakWorkingSetSize;
+        info.current_commit = pmc.PrivateUsage;
+        info.peak_commit = pmc.PeakPagefileUsage;
     }
 #endif
     return info;

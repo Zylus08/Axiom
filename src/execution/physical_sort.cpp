@@ -196,6 +196,9 @@ void PhysicalSort::spill_current_run() {
     total_spilled_runs_++;
     spilled_runs_.push_back(std::move(part));
     in_memory_rows_.clear();
+    if (reservation_) {
+        reservation_->release_all();
+    }
 }
 
 void PhysicalSort::collect_runs() {
@@ -204,6 +207,10 @@ void PhysicalSort::collect_runs() {
     current_row_idx_ = 0;
     spilled_bytes_ = 0;
     is_external_merge_ = false;
+
+    if (ctx_ && ctx_->memory_manager()) {
+        reservation_ = ctx_->memory_manager()->create_reservation();
+    }
 
     children_[0]->init(ctx_);
     size_t num_cols = output_schema_.column_count();
@@ -215,6 +222,9 @@ void PhysicalSort::collect_runs() {
         if (lim >= 0 && off >= 0) {
             size_t k = static_cast<size_t>(lim + off);
             if (k > 0 && k <= 50000) {
+                if (reservation_) {
+                    (void)reservation_->try_reserve(k * 128);
+                }
                 // Top-K Bounded Max-Heap: maintains the best K rows in memory without spilling
                 auto heap_cmp = [this](const std::vector<Value>& a, const std::vector<Value>& b) {
                     return compare_rows(a, b);
@@ -275,6 +285,10 @@ void PhysicalSort::collect_runs() {
         if (current_accumulated_bytes + batch_bytes > run_budget && !in_memory_rows_.empty()) {
             spill_current_run();
             current_accumulated_bytes = 0;
+        }
+
+        if (reservation_) {
+            (void)reservation_->try_reserve(batch_bytes);
         }
 
         for (size_t r = 0; r < rows; ++r) {
@@ -407,6 +421,9 @@ std::unique_ptr<RecordBatch> PhysicalSort::next() {
 void PhysicalSort::close() {
     in_memory_rows_.clear();
     active_cursors_.clear();
+    if (reservation_) {
+        reservation_->release_all();
+    }
     for (auto& p : spilled_runs_) {
         p->remove_file();
     }

@@ -13,6 +13,8 @@ namespace axiom {
 struct ProcessMemoryInfo {
     size_t current_rss{0};
     size_t peak_rss{0};
+    size_t current_commit{0};
+    size_t peak_commit{0};
 };
 
 [[nodiscard]] ProcessMemoryInfo get_process_memory_info();

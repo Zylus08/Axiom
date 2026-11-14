@@ -7,7 +7,10 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 # Compiler flags
 if(MSVC)
-    add_compile_options(/W4 /permissive- /utf-8 /Z7)
+    add_compile_options(/W4 /permissive- /utf-8 /FS)
+    if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+        add_compile_options(/Zi)
+    endif()
 else()
     add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
@@ -56,6 +59,7 @@ add_executable(axiom_unit_tests
     tests/unit/test_binder.cpp
     tests/unit/test_operators.cpp
     tests/unit/test_m2_out_of_core.cpp
+    tests/unit/test_m3_forensics.cpp
 )
 target_include_directories(axiom_unit_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(axiom_unit_tests PRIVATE axiom_core)

@@ -3,6 +3,7 @@
 #include "axiom/execution/physical_operator.h"
 #include "axiom/execution/expression_evaluator.h"
 #include "axiom/storage/spill_manager.h"
+#include "axiom/common/memory_manager.h"
 #include <unordered_map>
 #include <vector>
 #include <memory>
@@ -80,6 +81,7 @@ private:
     std::vector<std::unique_ptr<SpillPartition>> spilled_partitions_;
     size_t current_partition_idx_{0};
     size_t spilled_bytes_{0};
+    std::unique_ptr<MemoryReservation> reservation_;
 
     void check_fast_col_refs();
     Schema build_intermediate_schema() const;
