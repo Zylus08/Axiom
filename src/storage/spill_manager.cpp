@@ -253,6 +253,7 @@ std::unique_ptr<SpillPartition> SpillManager::create_partition(const Schema& sch
 
 void SpillManager::record_bytes_written(size_t bytes) {
     if (bytes == 0) return;
+    cumulative_disk_bytes_.fetch_add(bytes, std::memory_order_relaxed);
     size_t prev = current_disk_bytes_.fetch_add(bytes, std::memory_order_relaxed);
     size_t new_val = prev + bytes;
 

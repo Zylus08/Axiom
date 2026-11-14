@@ -12,6 +12,9 @@ std::string QueryTelemetry::format_profile() const {
     oss << "Peak Process Working Set: " << format_memory_size(peak_process_rss) << " (" << peak_process_rss << " bytes)\n";
     oss << "Peak Private Commit: " << format_memory_size(peak_process_commit) << " (" << peak_process_commit << " bytes)\n";
     oss << "Total Disk Spilled: " << format_memory_size(total_spilled_bytes) << " (" << total_spilled_bytes << " bytes)\n";
+    if (cumulative_spilled_bytes > total_spilled_bytes) {
+        oss << "Cumulative Disk Written: " << format_memory_size(cumulative_spilled_bytes) << " (" << cumulative_spilled_bytes << " bytes)\n";
+    }
     oss << "Total Spill Partitions/Runs Created: " << total_spill_count << "\n\n";
 
     if (!operator_profiles.empty()) {
@@ -59,6 +62,7 @@ void QueryExecutionContext::finalize_telemetry() {
 
     if (spill_manager_) {
         telemetry_.total_spilled_bytes = spill_manager_->peak_disk_bytes();
+        telemetry_.cumulative_spilled_bytes = spill_manager_->cumulative_disk_bytes();
         telemetry_.total_spill_count = spill_manager_->total_spill_count();
     }
 }

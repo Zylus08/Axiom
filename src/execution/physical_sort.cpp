@@ -313,7 +313,120 @@ void PhysicalSort::collect_runs() {
             spill_current_run();
         }
         is_external_merge_ = true;
+
+        // Dynamic fan-in bounding: clamp between 2 and 16 based on available budget
+        size_t max_fan_in = 16;
+        if (ctx_ && ctx_->memory_manager() && ctx_->memory_manager()->has_limit()) {
+            size_t total_budget = ctx_->memory_manager()->max_budget();
+            // Estimate ~250KB per cursor (150KB batch + 64KB stream buffer + structs)
+            size_t est_cursor_bytes = 250 * 1024;
+            size_t computed_fan_in = (total_budget * 3 / 10) / est_cursor_bytes;
+            max_fan_in = std::clamp<size_t>(computed_fan_in, 2, 16);
+        }
+
+        reduce_runs_hierarchical(max_fan_in);
         init_multiway_merge();
+    }
+}
+
+void PhysicalSort::reduce_runs_hierarchical(size_t max_fan_in) {
+    if (spilled_runs_.size() <= max_fan_in) {
+        return;
+    }
+
+    if (!ctx_ || !ctx_->spill_manager()) {
+        return;
+    }
+
+    size_t num_cols = output_schema_.column_count();
+
+    while (spilled_runs_.size() > max_fan_in) {
+        std::vector<std::unique_ptr<SpillPartition>> next_level_runs;
+
+        for (size_t i = 0; i < spilled_runs_.size(); i += max_fan_in) {
+            size_t slice_size = std::min(max_fan_in, spilled_runs_.size() - i);
+
+            // If only 1 run in slice, pass it through without merging
+            if (slice_size == 1) {
+                next_level_runs.push_back(std::move(spilled_runs_[i]));
+                continue;
+            }
+
+            // Create intermediate run partition
+            auto intermediate_part = ctx_->spill_manager()->create_partition(output_schema_, "sort_interm_run");
+
+            // Prepare cursors for this slice
+            std::vector<std::unique_ptr<MergeCursor>> cursors;
+            for (size_t k = 0; k < slice_size; ++k) {
+                auto& run = spilled_runs_[i + k];
+                run->prepare_read();
+                auto cursor = std::make_unique<MergeCursor>();
+                cursor->partition_idx = k;
+                cursor->current_batch = run->read_next_batch();
+                cursor->current_row = 0;
+                if (cursor->has_row()) {
+                    cursors.push_back(std::move(cursor));
+                }
+            }
+
+            // Merge cursors and stream batches to intermediate_part
+            std::vector<std::vector<Value>> output_columns(num_cols);
+            for (size_t c = 0; c < num_cols; ++c) {
+                output_columns[c].reserve(batch_size_);
+            }
+            size_t rows_collected = 0;
+
+            while (!cursors.empty()) {
+                size_t best_idx = 0;
+                for (size_t c_idx = 1; c_idx < cursors.size(); ++c_idx) {
+                    if (compare_cursors_greater(cursors[best_idx].get(), cursors[c_idx].get())) {
+                        best_idx = c_idx;
+                    }
+                }
+
+                MergeCursor* best = cursors[best_idx].get();
+                for (size_t c = 0; c < num_cols; ++c) {
+                    output_columns[c].push_back(best->current_batch->get_value(c, best->current_row));
+                }
+                rows_collected++;
+
+                best->current_row++;
+                if (best->current_row >= best->current_batch->row_count()) {
+                    best->current_batch = spilled_runs_[i + best->partition_idx]->read_next_batch();
+                    best->current_row = 0;
+                    if (!best->has_row()) {
+                        cursors.erase(cursors.begin() + best_idx);
+                    }
+                }
+
+                if (rows_collected >= batch_size_) {
+                    RecordBatch batch(output_schema_, std::move(output_columns), rows_collected);
+                    intermediate_part->write_batch(batch);
+                    output_columns = std::vector<std::vector<Value>>(num_cols);
+                    for (size_t c = 0; c < num_cols; ++c) {
+                        output_columns[c].reserve(batch_size_);
+                    }
+                    rows_collected = 0;
+                }
+            }
+
+            if (rows_collected > 0) {
+                RecordBatch batch(output_schema_, std::move(output_columns), rows_collected);
+                intermediate_part->write_batch(batch);
+            }
+
+            intermediate_part->finish_write();
+
+            // Explicitly close and delete input slice partitions from disk to conserve disk space
+            for (size_t k = 0; k < slice_size; ++k) {
+                spilled_runs_[i + k]->remove_file();
+                spilled_runs_[i + k].reset();
+            }
+
+            next_level_runs.push_back(std::move(intermediate_part));
+        }
+
+        spilled_runs_ = std::move(next_level_runs);
     }
 }
 
@@ -326,6 +439,9 @@ void PhysicalSort::init_multiway_merge() {
         cursor->current_batch = spilled_runs_[i]->read_next_batch();
         cursor->current_row = 0;
         if (cursor->has_row()) {
+            if (reservation_ && cursor->current_batch) {
+                (void)reservation_->try_reserve(BinarySerializer::estimate_batch_size(*cursor->current_batch));
+            }
             active_cursors_.push_back(std::move(cursor));
         }
     }
@@ -362,9 +478,22 @@ std::unique_ptr<RecordBatch> PhysicalSort::next_merged_batch() {
 
         best->current_row++;
         if (best->current_row >= best->current_batch->row_count()) {
+            size_t old_sz = BinarySerializer::estimate_batch_size(*best->current_batch);
             best->current_batch = spilled_runs_[best->partition_idx]->read_next_batch();
             best->current_row = 0;
-            if (!best->has_row()) {
+            if (best->has_row()) {
+                size_t new_sz = BinarySerializer::estimate_batch_size(*best->current_batch);
+                if (reservation_) {
+                    if (new_sz > old_sz) {
+                        (void)reservation_->try_reserve(new_sz - old_sz);
+                    } else if (old_sz > new_sz) {
+                        reservation_->release(old_sz - new_sz);
+                    }
+                }
+            } else {
+                if (reservation_) {
+                    reservation_->release(old_sz);
+                }
                 active_cursors_.erase(active_cursors_.begin() + best_idx);
             }
         }

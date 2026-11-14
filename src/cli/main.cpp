@@ -32,7 +32,7 @@ void print_help() {
 }
 
 void print_version() {
-    std::cout << "axiom version 0.2.0-m2 (x86_64-windows-msvc C++20 out-of-core engine)\n";
+    std::cout << "axiom version 0.1.0 (x86_64-windows-msvc C++20 analytical engine)\n";
 }
 
 axiom::Schema infer_schema_from_csv(const std::string& csv_path) {

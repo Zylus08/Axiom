@@ -173,6 +173,13 @@ std::unique_ptr<RecordBatch> BinarySerializer::read_batch(std::istream& is, cons
                              std::to_string(expected_schema.column_count()) + ", got " + std::to_string(num_cols));
     }
 
+    constexpr uint64_t MAX_PERMISSIBLE_PAYLOAD = 256ULL * 1024 * 1024; // 256 MB per batch limit
+    constexpr uint32_t MAX_PERMISSIBLE_ROWS = 10000000; // 10 million rows per batch limit
+
+    if (num_rows > MAX_PERMISSIBLE_ROWS) {
+        throw AxiomException(ErrorCategory::Storage, "Malformed spill file: row count exceeds maximum permissible limit: " + std::to_string(num_rows));
+    }
+
     if (num_rows == 0) {
         uint32_t dummy_chk = 0;
         is.read(reinterpret_cast<char*>(&dummy_chk), sizeof(dummy_chk));
@@ -186,6 +193,10 @@ std::unique_ptr<RecordBatch> BinarySerializer::read_batch(std::istream& is, cons
 
     if (!is) {
         throw AxiomException(ErrorCategory::Storage, "Truncated spill file payload header");
+    }
+
+    if (payload_len > MAX_PERMISSIBLE_PAYLOAD) {
+        throw AxiomException(ErrorCategory::Storage, "Malformed spill file: payload length exceeds maximum permissible limit: " + std::to_string(payload_len));
     }
 
     std::vector<char> payload(static_cast<size_t>(payload_len));
