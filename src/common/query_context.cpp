@@ -10,6 +10,7 @@ std::string QueryTelemetry::format_profile() const {
     oss << "Total Execution Time: " << std::fixed << std::setprecision(2) << total_execution_time_ms << " ms\n";
     oss << "Peak Accounted Memory: " << format_memory_size(peak_accounted_memory) << " (" << peak_accounted_memory << " bytes)\n";
     oss << "Peak Process Working Set: " << format_memory_size(peak_process_rss) << " (" << peak_process_rss << " bytes)\n";
+    oss << "Peak Private Commit: " << format_memory_size(peak_process_commit) << " (" << peak_process_commit << " bytes)\n";
     oss << "Total Disk Spilled: " << format_memory_size(total_spilled_bytes) << " (" << total_spilled_bytes << " bytes)\n";
     oss << "Total Spill Partitions/Runs Created: " << total_spill_count << "\n\n";
 
@@ -54,6 +55,7 @@ void QueryExecutionContext::finalize_telemetry() {
 
     auto proc_mem = get_process_memory_info();
     telemetry_.peak_process_rss = proc_mem.peak_rss;
+    telemetry_.peak_process_commit = proc_mem.peak_commit;
 
     if (spill_manager_) {
         telemetry_.total_spilled_bytes = spill_manager_->peak_disk_bytes();

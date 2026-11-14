@@ -161,6 +161,10 @@ void PhysicalHashAggregate::execute_in_memory_aggregation() {
 
                 auto it = groups.find(row_key);
                 if (it == groups.end()) {
+                    if (reservation_) {
+                        size_t est_group = num_keys * sizeof(Value) + num_aggs * sizeof(AggregateAccumulator) + 64;
+                        (void)reservation_->try_reserve(est_group);
+                    }
                     std::vector<AggregateAccumulator> accumulators(num_aggs);
                     for (size_t a = 0; a < num_aggs; ++a) {
                         accumulators[a].func = aggregates_[a]->func();
@@ -362,6 +366,10 @@ bool PhysicalHashAggregate::process_next_spilled_partition() {
 
                 auto it = groups.find(row_key);
                 if (it == groups.end()) {
+                    if (reservation_) {
+                        size_t est_group = num_keys * sizeof(Value) + num_aggs * sizeof(AggregateAccumulator) + 64;
+                        (void)reservation_->try_reserve(est_group);
+                    }
                     std::vector<AggregateAccumulator> accumulators(num_aggs);
                     for (size_t a = 0; a < num_aggs; ++a) {
                         accumulators[a].func = aggregates_[a]->func();
@@ -400,6 +408,9 @@ bool PhysicalHashAggregate::process_next_spilled_partition() {
 
 void PhysicalHashAggregate::init(QueryExecutionContext* ctx) {
     ctx_ = ctx;
+    if (ctx_ && ctx_->memory_manager()) {
+        reservation_ = ctx_->memory_manager()->create_reservation();
+    }
     size_t num_keys = group_by_.size();
 
     // Check if external partitioning is required
@@ -460,6 +471,9 @@ void PhysicalHashAggregate::close() {
     result_rows_.clear();
     current_result_row_ = 0;
     aggregation_done_ = true;
+    if (reservation_) {
+        reservation_->release_all();
+    }
     for (auto& p : spilled_partitions_) {
         p->remove_file();
     }

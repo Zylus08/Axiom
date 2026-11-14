@@ -7,6 +7,7 @@ void run_csv_reader_tests();
 void run_binder_tests();
 void run_operators_tests();
 void run_m2_out_of_core_tests();
+void run_m3_forensics_tests();
 
 int main() {
     std::cout << "Running Axiom Unit Tests..." << std::endl;
@@ -19,6 +20,7 @@ int main() {
         run_binder_tests();
         run_operators_tests();
         run_m2_out_of_core_tests();
+        run_m3_forensics_tests();
     } catch (const std::exception& e) {
         std::cerr << "FATAL UNCAUGHT EXCEPTION: " << e.what() << std::endl;
         return 1;

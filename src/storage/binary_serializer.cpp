@@ -137,6 +137,9 @@ void BinarySerializer::write_batch(std::ostream& os, const RecordBatch& batch) {
     if (!payload.empty()) {
         os.write(payload.data(), static_cast<std::streamsize>(payload.size()));
     }
+    if (!os) {
+        throw AxiomException(ErrorCategory::Storage, "I/O write failure in BinarySerializer::write_batch (disk full or stream error)");
+    }
 }
 
 std::unique_ptr<RecordBatch> BinarySerializer::read_batch(std::istream& is, const Schema& expected_schema) {

@@ -32,6 +32,7 @@ struct QueryOptions {
 struct QueryTelemetry {
     size_t peak_accounted_memory{0};
     size_t peak_process_rss{0};
+    size_t peak_process_commit{0};
     size_t total_spilled_bytes{0};
     size_t total_spill_count{0};
     double total_execution_time_ms{0.0};

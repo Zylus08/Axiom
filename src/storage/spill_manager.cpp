@@ -99,6 +99,9 @@ void SpillPartition::write_batch(const RecordBatch& batch) {
 
     auto start_pos = writer_->tellp();
     BinarySerializer::write_batch(*writer_, batch);
+    if (!writer_->good()) {
+        throw AxiomException(ErrorCategory::Storage, "Failed to write batch to spill partition: " + file_path_);
+    }
     auto end_pos = writer_->tellp();
 
     size_t written = (end_pos >= start_pos) ? static_cast<size_t>(end_pos - start_pos) : 0;
@@ -181,12 +184,36 @@ SpillManager::SpillManager(std::string temp_dir, size_t max_disk_bytes)
     _setmaxstdio(2048);
 #endif
     if (temp_dir.empty()) {
-        std::error_code ec;
-        auto sys_temp = std::filesystem::temp_directory_path(ec);
-        if (ec) {
-            temp_dir_ = "./tmp";
+        const char* env_temp = std::getenv("AXIOM_TEMP_DIR");
+        if (env_temp && *env_temp) {
+            temp_dir_ = (std::filesystem::path(env_temp) / ("axiom_spill_" + std::to_string(get_current_pid()))).string();
         } else {
-            temp_dir_ = (sys_temp / ("axiom_spill_" + std::to_string(get_current_pid()))).string();
+            std::error_code ec;
+            auto sys_temp = std::filesystem::temp_directory_path(ec);
+            auto cur_tmp = std::filesystem::current_path(ec) / "tmp";
+
+            uintmax_t sys_space = 0;
+            uintmax_t cur_space = 0;
+
+            if (!ec) {
+                auto s = std::filesystem::space(sys_temp, ec);
+                if (!ec) sys_space = s.available;
+            }
+            ec.clear();
+            std::filesystem::create_directories(cur_tmp, ec);
+            if (!ec) {
+                auto s = std::filesystem::space(cur_tmp, ec);
+                if (!ec) cur_space = s.available;
+            }
+
+            // Prefer location with substantially more free disk space
+            if (cur_space > sys_space && cur_space > 1024 * 1024) {
+                temp_dir_ = (cur_tmp / ("axiom_spill_" + std::to_string(get_current_pid()))).string();
+            } else if (sys_space > 0) {
+                temp_dir_ = (sys_temp / ("axiom_spill_" + std::to_string(get_current_pid()))).string();
+            } else {
+                temp_dir_ = "./tmp/axiom_spill_" + std::to_string(get_current_pid());
+            }
         }
     } else {
         temp_dir_ = std::move(temp_dir);

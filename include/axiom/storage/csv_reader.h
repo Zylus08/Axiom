@@ -51,7 +51,11 @@ private:
     std::vector<char> buffer_;
     size_t buffer_pos_{0};
     size_t buffer_len_{0};
-    static constexpr size_t BUFFER_CAPACITY = 64 * 1024;
+    static constexpr size_t BUFFER_CAPACITY = 256 * 1024;
+
+    // Reusable buffers to eliminate per-row vector allocations
+    std::vector<std::string> row_fields_buf_;
+    std::vector<bool> is_null_buf_;
 
     bool fill_buffer();
     std::optional<char> next_char();

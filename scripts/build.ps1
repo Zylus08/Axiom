@@ -2,7 +2,8 @@
 param(
     [string]$Config = "Release",
     [switch]$Test = $false,
-    [switch]$Clean = $false
+    [switch]$Clean = $false,
+    [int]$Parallel = 1
 )
 
 $ErrorActionPreference = "Stop"
@@ -29,9 +30,9 @@ if ($Clean -and (Test-Path $buildDir)) {
     Remove-Item -Recurse -Force $buildDir
 }
 
-Write-Host "==> Building Axiom [$Config]..."
+Write-Host "==> Building Axiom [$Config] with --parallel $Parallel..."
 
-$cmd = "call `"$vsDevCmd`" -arch=x64 && cmake -B $buildDir -G Ninja -DCMAKE_BUILD_TYPE=$Config && cmake --build $buildDir --config $Config --parallel 2"
+$cmd = "call `"$vsDevCmd`" -arch=x64 && cmake -B $buildDir -G Ninja -DCMAKE_BUILD_TYPE=$Config && cmake --build $buildDir --config $Config --parallel $Parallel"
 cmd.exe /c $cmd
 
 if ($LASTEXITCODE -ne 0) {

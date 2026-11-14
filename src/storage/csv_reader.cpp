@@ -306,7 +306,6 @@ Value CsvReader::parse_value(std::string_view raw, bool is_null, TypeKind target
             return Value::make_bigint(val);
         }
         case TypeKind::Double: {
-            // Trim
             size_t start = 0;
             while (start < raw.size() && std::isspace(static_cast<unsigned char>(raw[start]))) start++;
             size_t end = raw.size();
@@ -314,17 +313,14 @@ Value CsvReader::parse_value(std::string_view raw, bool is_null, TypeKind target
             if (start == end) {
                 return Value::make_null(TypeKind::Double);
             }
-            std::string s(raw.substr(start, end - start));
-            try {
-                size_t idx = 0;
-                double val = std::stod(s, &idx);
-                if (idx != s.size()) {
-                    throw std::invalid_argument("trailing characters");
-                }
-                return Value::make_double(val);
-            } catch (...) {
+            double val = 0.0;
+            const char* first = raw.data() + start;
+            const char* last = raw.data() + end;
+            auto [ptr, ec] = std::from_chars(first, last, val);
+            if (ec != std::errc() || ptr != last) {
                 throw AxiomException(ErrorCategory::Storage, "Invalid double literal in CSV at line " + std::to_string(line_num_) + ": '" + std::string(raw) + "'");
             }
+            return Value::make_double(val);
         }
         case TypeKind::VarChar:
             return Value::make_varchar(std::string(raw));
@@ -343,26 +339,26 @@ std::unique_ptr<RecordBatch> CsvReader::read_batch(size_t max_rows) {
     }
 
     size_t rows_read = 0;
-    std::vector<std::string> fields;
-    std::vector<bool> is_null;
+    row_fields_buf_.reserve(schema_.column_count());
+    is_null_buf_.reserve(schema_.column_count());
 
     while (rows_read < max_rows) {
-        if (!read_next_row(fields, is_null)) {
+        if (!read_next_row(row_fields_buf_, is_null_buf_)) {
             eof_reached_ = true;
             break;
         }
 
-        if (fields.size() != schema_.column_count()) {
+        if (row_fields_buf_.size() != schema_.column_count()) {
             throw AxiomException(
                 ErrorCategory::Storage,
                 "CSV column count mismatch at line " + std::to_string(line_num_) +
                 ": expected " + std::to_string(schema_.column_count()) +
-                ", got " + std::to_string(fields.size()) + " in " + file_path_
+                ", got " + std::to_string(row_fields_buf_.size()) + " in " + file_path_
             );
         }
 
         for (size_t c = 0; c < schema_.column_count(); ++c) {
-            columns[c].push_back(parse_value(fields[c], is_null[c], schema_.column(c).type));
+            columns[c].push_back(parse_value(row_fields_buf_[c], is_null_buf_[c], schema_.column(c).type));
         }
         rows_read++;
     }
